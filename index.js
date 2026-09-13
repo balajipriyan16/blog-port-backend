@@ -20,15 +20,58 @@ const blogSchema = new mongoose.Schema({
 
 const Model = mongoose.model("db1", blogSchema, "blog");
 
-mongoose.connect(process.env.MONGODB_URI)
-    .then(async () => {
-        console.log("Database Connected");
-    })
-    .catch((error) => {
-        console.log("Database Connection Error:", error);
-    });
+// Serverless Mongoose connection caching
+let cached = global.mongoose;
+if (!cached) {
+    cached = global.mongoose = { conn: null, promise: null };
+}
 
+async function connectDB() {
+    if (cached.conn && mongoose.connection.readyState === 1) {
+        return cached.conn;
+    }
 
+    if (!cached.promise) {
+        const opts = {
+            bufferCommands: false,
+        };
+
+        cached.promise = mongoose.connect(process.env.MONGODB_URI, opts)
+            .then((m) => {
+                console.log("Database Connected");
+                return m;
+            })
+            .catch((err) => {
+                cached.promise = null;
+                console.error("Database Connection Error:", err);
+                throw err;
+            });
+    }
+
+    try {
+        cached.conn = await cached.promise;
+    } catch (e) {
+        cached.promise = null;
+        throw e;
+    }
+
+    return cached.conn;
+}
+
+// Ensure database connection before handling any requests
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error("DB Middleware Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Database connection failed",
+            error: error.message
+        });
+    }
+});
 
 app.get("/data", async (req, res) => {
     try {
@@ -121,8 +164,11 @@ app.patch("/data/:id/like", async (req, res) => {
     }
 });
 
+if (!process.env.VERCEL) {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Application Started on http://localhost:${PORT}`);
+    });
+}
 
-
-app.listen(3000, () => {
-    console.log("Application Started on http://localhost:3000");
-});
+export default app;
