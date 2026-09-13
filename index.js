@@ -164,6 +164,15 @@ app.patch("/data/:id/like", async (req, res) => {
     }
 });
 
+// Global JSON error handling middleware (catches body-parser syntax errors, etc.)
+app.use((err, req, res, next) => {
+    console.error("Server Error:", err);
+    res.status(err.status || 500).json({
+        success: false,
+        message: err.message || "Internal server error"
+    });
+});
+
 if (!process.env.VERCEL) {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
